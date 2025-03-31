@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Agente Red Balloon</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <style>
+    body {
+      background: linear-gradient(120deg, #FF3B3F, #FF8145);
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      min-height: 100vh;
+    }
+    .card {
+      background: #fff;
+      border-radius: 15px;
+      padding: 30px;
+      box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+    }
+    #chatMensagens {
+      background: #f1f1f1;
+      border-radius: 10px;
+      padding: 15px;
+      max-height: 300px;
+      overflow-y: auto;
+      margin-top: 20px;
+      font-size: 14px;
+    }
+    .msg-user {
+      text-align: right;
+      color: #FF3B3F;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    .msg-agente {
+      text-align: left;
+      color: #333;
+      margin-bottom: 10px;
+      white-space: pre-line;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="card">
+    <h2 class="mb-4 text-center">🧠 Agente Red Balloon</h2>
+
+    <div class="mb-3">
+      <label for="senha" class="form-label">🔐 Senha</label>
+      <input type="password" class="form-control" id="senha" placeholder="Digite a senha (ex: 123rb)" />
+    </div>
+
+    <div class="mb-3">
+      <label for="comando" class="form-label">🛠️ Comando</label>
+      <select class="form-select" id="comando" onchange="mostrarFiltro()">
+        <option value="">-- Escolha um comando --</option>
+        <option value="listar campanhas">Listar campanhas</option>
+        <option value="resumo">Resumo</option>
+      </select>
+    </div>
+
+    <div class="mb-3" id="filtroContainer" style="display:none">
+      <label for="filtro" class="form-label">🌎 Filtro de campanhas</label>
+      <select class="form-select" id="filtro">
+        <option value="todas">Todas as campanhas</option>
+        <option value="br">Campanhas BR</option>
+        <option value="sp">Campanhas SP</option>
+      </select>
+    </div>
+
+    <div class="row mb-3">
+      <div class="col">
+        <label for="dataInicio" class="form-label">📅 Início</label>
+        <input type="date" id="dataInicio" class="form-control" onchange="montarPrompt()" />
+      </div>
+      <div class="col">
+        <label for="dataFim" class="form-label">📅 Fim</label>
+        <input type="date" id="dataFim" class="form-control" onchange="montarPrompt()" />
+      </div>
+    </div>
+
+    <div class="input-group mb-3">
+      <input type="text" id="prompt" class="form-control" placeholder="Comando montado aparecerá aqui" readonly />
+      <button class="btn btn-primary" onclick="enviarPrompt()">Enviar</button>
+    </div>
+
+    <div id="chatMensagens"></div>
+  </div>
+</div>
+
+<script>
+  function mostrarFiltro() {
+    const cmd = document.getElementById("comando").value;
+    const filtroDiv = document.getElementById("filtroContainer");
+    filtroDiv.style.display = cmd ? "block" : "none";
+    montarPrompt();
+  }
+
+  function montarPrompt() {
+    const cmd = document.getElementById("comando").value;
+    const inicio = document.getElementById("dataInicio").value;
+    const fim = document.getElementById("dataFim").value;
+    const input = document.getElementById("prompt");
+
+    if (cmd && inicio && fim) {
+      const formatar = (d) => {
+        const [yyyy, mm, dd] = d.split("-");
+        return `${dd}/${mm}/${yyyy}`;
+      };
+      input.value = `${cmd} de ${formatar(inicio)} a ${formatar(fim)}`;
+    }
+  }
+
+  async function enviarPrompt() {
+    const senha = document.getElementById("senha").value;
+    const prompt = document.getElementById("prompt").value;
+    const filtro = document.getElementById("filtro").value || "todas";
+    const chat = document.getElementById("chatMensagens");
+
+    if (!senha || !prompt) {
+      alert("Preencha a senha e selecione um comando + datas.");
+      return;
+    }
+
+    const userMsg = document.createElement("div");
+    userMsg.className = "msg-user";
+    userMsg.textContent = "Você: " + prompt;
+    chat.appendChild(userMsg);
+
+    const loading = document.createElement("div");
+    loading.className = "msg-agente";
+    loading.textContent = "⏳ Processando...";
+    chat.appendChild(loading);
+    chat.scrollTop = chat.scrollHeight;
+
+    try {
+      const resposta = await fetch("https://agente-redballoon.leocassella92.workers.dev", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comando: prompt, password: senha, filtro })
+      });
+
+      const json = await resposta.json();
+      loading.remove();
+
+      const agenteMsg = document.createElement("div");
+      agenteMsg.className = "msg-agente";
+
+      if (json.sucesso && Array.isArray(json.campanhas)) {
+        const detalhes = json.campanhas.map(c =>
+          `📌 ${c.campanha}\n📆 ${c.periodo}\n👥 Alcance: ${c.alcance}\n📈 Impressões: ${c.impressoes}\n🔗 Cliques: ${c.cliques}\n📊 CTR: ${c.ctr}\n🎯 Resultados: ${c.resultados}\n💸 Custo por resultado: R$${c.custoPorResultado}\n💰 Investido: R$${c.investido}\n──────────────`
+        ).join("\n\n");
+
+        agenteMsg.textContent = `✅ ${json.campanhas.length} campanhas encontradas:\n\n${detalhes}`;
+      } else if (json.sucesso && json.mensagem) {
+        agenteMsg.textContent = json.mensagem;
+      } else {
+        agenteMsg.textContent = "❌ " + (json.erro || "Erro desconhecido.");
+      }
+
+      chat.appendChild(agenteMsg);
+      chat.scrollTop = chat.scrollHeight;
+    } catch (e) {
+      loading.remove();
+      const erroMsg = document.createElement("div");
+      erroMsg.className = "msg-agente";
+      erroMsg.textContent = "❌ Erro de rede: " + e.message;
+      chat.appendChild(erroMsg);
+    }
+  }
+</script>
+
+</body>
+</html>
